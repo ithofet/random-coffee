@@ -3,6 +3,7 @@ require_once "vendor/autoload.php";
 require_once "Sender.php";
 require_once "Database/EventDB.php";
 require_once "Database/AdminList.php";
+require_once "Database/UsersDB.php";
 
 use VK\CallbackApi\Server\VKCallbackApiServerHandler;
 
@@ -62,6 +63,36 @@ class ServerHandler extends VKCallbackApiServerHandler
                 $db = new EventDB();
                 $db->deleteUser($id);
                 $this->vk->send("Заявка отменена", $this->getOneButtonKeyboard("Участвую"));
+                break;
+            case "отписаться":
+                $db = new UsersDB();
+                $db->unsubscribe($id);
+                $keyboard = array("one_time" => false,
+                    "buttons" => array(array(array(
+                        "action" => array(
+                            "type" => "text",
+                            "label" => "Участвую",
+                            "payload" => ""
+                        ),
+                        "color" => "secondary"
+                    )),
+                        array(array(
+                            "action" => array(
+                                "type" => "text",
+                                "label" => "Подписаться",
+                                "payload" => ""
+                            ),
+                            "color" => "secondary"
+                        ))
+                    )
+                );
+                $this->vk->send('Будем по вам скучать и вновь ждать! 
+Чтобы вновь получать сообщения о новом раунде, жмите "Подписаться"!', $keyboard);
+                break;
+            case "подписаться":
+                $db = new UsersDB();
+                $db->subscribe($id);
+                $this->vk->send("Теперь вы будете в курсе наших событий!", $this->getOneButtonKeyboard("Участвую"));
                 break;
             default:
                 $admin = new AdminList();

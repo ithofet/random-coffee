@@ -14,11 +14,12 @@ class AdminList extends DataBaseAuth
 /help, /ls, /menu - справка (список команд)
 ";
             case 1:
-                return $this->generateText(($status - 1)) . "/approve - подтверждаение новых заявок
+                return $this->generateText(($status - 1)) . "/approve - подтверждение новых заявок
 /statistic - статистика собрания
 ";
             case 2:
-                return $this->generateText(($status - 1)) . "/start_event - начать раунт
+                return $this->generateText(($status - 1)) . "/start_event - начать раунд
+/send_notify - разослать уведомление о предстоящем раунде
 /new_editor - назначить редактора
 /delete_editor - разжаловать редактора
 ";
@@ -58,6 +59,7 @@ class AdminList extends DataBaseAuth
                     break;
                 case 2:
                     array_push($arr, array($this->getButton("/start_event")),
+                        array($this->getButton("/send_notify")),
                         array($this->getButton("/new_editor"),
                             $this->getButton("/delete_editor")));
                     break;
@@ -137,13 +139,31 @@ class AdminList extends DataBaseAuth
 
     private function locSender(int $a, int $b)
     {
-        $vk = new Sender(0);
-        $vk->sendTo($a, "Привет! Это проект Random coffee.
-Вот ссылка на твоего собеседника: @id$b
-Желаю круто провести время! Удачи!");
-        $vk->sendTo($b, "Привет! Это проект Random coffee.
-Вот ссылка на твоего собеседника: @id$a
-Желаю круто провести время! Удачи!");
+        $before = "Привет! Это проект Random coffee.\\nВот ссылка на твоего собеседника: @id";
+        $after = "\\nЖелаю круто провести время! Удачи!";
+        return [
+            [$a, $before . $b . $after],
+            [$b, $before . $a . $after]
+        ];
+    }
+
+    private $used;
+    private $g;
+    private $mt;
+
+    private function dfs(int $v): bool
+    {
+
+        if (array_key_exists($v, $this->used))
+            return false;
+        $this->used[$v] = true;
+        foreach ($this->g[$v] as $u) {
+            if (!array_key_exists($u, $this->mt) || $this->dfs($this->mt[$u])) {
+                $this->mt[$u] = $v;
+                return true;
+            }
+        }
+        return false;
     }
 
     private function startEvent(Sender $vk)
@@ -167,38 +187,38 @@ class AdminList extends DataBaseAuth
             $group1 = $halfOf[0];
             $group2 = $halfOf[1];
 
-            $out = fopen('input.txt', 'w');
             $meetings = new MeetingHistoryDB();
-            fwrite($out, count($users));
             for ($i = 0; $i < count($group1); $i++) {
                 $blackList = $meetings->blackList($group1[$i]);
-                $keys = array_keys(array_diff($group2, $blackList));
-                $size = count($keys);
-                $line = "\n$size ";
-                for ($j = 0; $j < count($keys); $j++) {
-                    $line .= $keys[$j] + $offset . " ";
-                }
-                fwrite($out, $line);
+                $keys = array_values(array_diff($group2, $blackList));
+                $this->g[$group1[$i]] = $keys;
             }
-            fclose($out);
-            exec("./../../cpp/main");
-            $fd = fopen("output.txt", 'r');
-            $res = fgets($fd);
-            fclose($fd);
-        } while ($res != count($keys) && $globalCounter < 5);
+
+            $this->mt = array();
+            $cnt = 0;
+            $numUsers = count($users);
+            foreach ($group1 as $i) {
+                $this->used = array();
+                if ($this->dfs($i))
+                    $cnt++;
+            }
+
+        } while (count($this->mt) < count($group1) && $globalCounter < 5);
 
         $history = new MeetingHistoryDB();
-        $fd = fopen("output.txt", 'r');
-        $size = fgets($fd);
         $state = new UsersDB();
-        for ($i = 0; $i < $size; $i++) {
-            $str = fgets($fd);
-            preg_match_all("/\d+/", $str, $matches);
-            $this->locSender($users[$matches[0][0]], $users[$matches[0][1]]);
-            $history->addMeet($users[$matches[0][0]], $users[$matches[0][1]]);
-            $state->newMeet($users[$matches[0][0]]);
-            $state->newMeet($users[$matches[0][1]]);
+        $messages = array();
+        foreach ($this->mt as $key => $value) {
+            $id1 = $key;
+            $id2 = $value;
+            $newPairs = $this->locSender($id1, $id2);
+            array_push($messages, $newPairs[0], $newPairs[1]);
+            $history->addMeet($id1, $id2);
+            $state->newMeet($id1);
+            $state->newMeet($id2);
         }
+        $vk->pairSend($messages);
+
         $this->getDb()->exec("TRUNCATE event");
         if ($loner !== null) {
             $vk->send("Не смог найти пару для @id$loner\n");
@@ -287,15 +307,38 @@ class AdminList extends DataBaseAuth
             case "/start_event":
                 if ($vk->adminPosition() >= 2 && $vk->getLastMessage() == "Подтвердите") {
                     $this->startEvent($vk);
-                    $vk->send("Done");
                 } elseif ($vk->adminPosition() >= 2) {
-                    $vk->send("Подтвердите", array("one_time" => true, "buttons" =>array(
+                    $vk->send("Подтвердите", array("one_time" => true, "buttons" => array(
                         array($this->getButton("/start_event")),
                         array($this->getButton("/menu"))
                     )));
                 } else {
                     $vk->send("Access denied");
                 }
+                break;
+            case "/send_notify":
+                $users = new UsersDB();
+                $keyboard = array("one_time" => true,
+                    "buttons" => array(array(array(
+                        "action" => array(
+                            "type" => "text",
+                            "label" => "Участвую",
+                            "payload" => ""
+                        ),
+                        "color" => "secondary"
+                    )),
+                        array(array(
+                            "action" => array(
+                                "type" => "text",
+                                "label" => "Отписаться",
+                                "payload" => ""
+                            ),
+                            "color" => "secondary"
+                        ))
+                    )
+                );
+                $text = 'Скорее прими участие в новом раунде рандом кофе!';
+                $vk->multiSend($text, $users->getNotifyIds(), $keyboard);
                 break;
             case "/new_editor":
                 if ($vk->adminPosition() >= 2)

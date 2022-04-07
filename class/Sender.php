@@ -4,6 +4,7 @@ require_once "auth/keys.php";
 require_once "Database/DataBaseAuth.php";
 
 use \VK\Client\VKApiClient;
+const API_VERSION = '5.101';
 
 class Sender extends DataBaseAuth
 {
@@ -17,7 +18,7 @@ class Sender extends DataBaseAuth
      */
     public function __construct(int $id)
     {
-        $this->vk = new VKApiClient('5.101');
+        $this->vk = new VKApiClient(API_VERSION);
         $this->chat_id = $id;
     }
 
@@ -62,7 +63,7 @@ class Sender extends DataBaseAuth
 
     /**
      * @param string $text
-     * @param array $keyboard
+     * @param array|null $keyboard
      */
     public function send(string $text, array $keyboard = null)
     {
@@ -99,6 +100,63 @@ class Sender extends DataBaseAuth
                 'random_id' => 0
             )
         );
+    }
+
+    /**
+     * @param string $message
+     * @param array $ids
+     * @param array|null $keyboard
+     * @return bool
+     * true - функция отработала без ошибок
+     *  false - если получатели не указаны
+     *
+     * отправка одного сообщения нескольким пользователям (максимум 100)
+     */
+    public function multiSend(string $text, array $ids, array $keyboard = array("one_time" => true, "buttons" => array())): bool
+    {
+        if (count($ids) < 1)
+            return false;
+        $ids = array_chunk($ids, 100);
+        foreach ($ids as $i) {
+            $this->vk->messages()->send(
+                $this->TOKEN(), array(
+                    'message' => $text,
+                    'user_ids' => $i,
+                    'keyboard' => json_encode($keyboard),
+                    'random_id' => 0
+                )
+            );
+        }
+        return true;
+    }
+
+    /**
+     * @param array $block
+     * @return void
+     *
+     * принимает на вход массив структуры (отправка клавиатуры не допускается):
+     * [
+     * [id1, textForId1],
+     * [id2, textForId2],
+     * ...
+     * ]
+     */
+    public function pairSend(array $pairs)
+    {
+        $blocks = array_chunk($pairs, 20);
+        foreach ($blocks as $block) {
+            $code="";
+            foreach ($block as $i) {
+                $id = $i[0];
+                $text = $i[1];
+                $code .= 'API.messages.send({"message": "' . $text . '", "peer_id": ' . $id . ', "random_id": 0});';
+            }
+            $code.="return;";
+            $this->vk->getRequest()->post('execute', $this->TOKEN(), [
+                'v' => API_VERSION,
+                'code' => $code
+            ]);
+        }
     }
 
     /**

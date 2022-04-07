@@ -56,7 +56,7 @@ class EventDB extends DataBaseAuth
 
     private function changed(int $id): bool
     {
-        return $this->getDb()->query("SELECT COUNT(*) FROM event WHERE chat_id LIKE $id AND confidant LIKE 0")->rowCount();
+        return $this->getDb()->query("SELECT COUNT(*) FROM event WHERE chat_id LIKE $id AND admitted LIKE 0")->rowCount();
     }
     /**
      * @param int $id

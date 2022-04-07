@@ -55,4 +55,26 @@ class UsersDB extends DataBaseAuth
             $this->getDb()->exec("UPDATE users SET confidant = 1 WHERE chat_id LIKE $id");
     }
 
+    public function getNotifyIds()
+    {
+        return $this->getDb()->query("SELECT chat_id FROM users WHERE notify LIKE 1 AND confidant NOT LIKE 2;")->fetchAll(PDO::FETCH_COLUMN);
+    }
+
+    /**
+     * @param int $id
+     * @return void
+     */
+    public function subscribe(int $id)
+    {
+        $this->getDb()->exec("UPDATE users SET notify = true WHERE chat_id LIKE $id");
+    }
+
+    /**
+     * @param int $id
+     * @return void
+     */
+    public function unsubscribe(int $id)
+    {
+        $this->getDb()->exec("UPDATE users SET notify = false WHERE chat_id LIKE $id");
+    }
 }
